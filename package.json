@@ -1,0 +1,11 @@
+{
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.0",
+    "@langchain/openai": "^0.6.0",
+    "dotenv": "^16.4.7"
+  }
+}
