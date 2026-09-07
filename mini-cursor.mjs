@@ -5,11 +5,55 @@ import {
   HumanMessage,
   ToolMessage,
 } from "@langchain/core/messages";
-import { allTools, toolsByName } from "./all-tools.mjs";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { tool } from "@langchain/core/tools";
+import { allTools as localTools } from "./all-tools.mjs";
 
 function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
+
+// 接入 MCP server：工具包装为 LangChain 工具，资源文本加入系统消息
+const mcpClient = new Client({ name: "mini-cursor", version: "1.0.0" });
+await mcpClient.connect(
+  new StdioClientTransport({
+    command: "node",
+    args: ["/Users/hhx/workspace/hhx/ai/my-mcp-server.mjs"],
+  })
+);
+
+const { tools: mcpToolDefs } = await mcpClient.listTools();
+const mcpTools = mcpToolDefs.map((def) =>
+  tool(
+    async (args) => {
+      const result = await mcpClient.callTool({
+        name: def.name,
+        arguments: args,
+      });
+      return result.content.map((part) => part.text ?? "").join("\n");
+    },
+    {
+      name: def.name,
+      description: def.description,
+      schema: def.inputSchema,
+    }
+  )
+);
+
+const allTools = [...localTools, ...mcpTools];
+const toolsByName = Object.fromEntries(
+  allTools.map((currentTool) => [currentTool.name, currentTool])
+);
+
+// Resource 需要客户端显式读取；这里只加载本地服务的使用指南。
+const { contents: resourceContents } = await mcpClient.readResource({
+  uri: "docs://guide",
+});
+const resourceContext = resourceContents
+  .filter((content) => typeof content.text === "string")
+  .map((content) => `资源 URI：${content.uri}\n${content.text}`)
+  .join("\n\n");
 
 const model = new ChatOpenAI({
   model: process.env.DEEPSEEK_MODEL,
@@ -22,7 +66,7 @@ const model = new ChatOpenAI({
 
 const modelWithTools = model.bindTools(allTools);
 
-function buildSystemPrompt(tools) {
+function buildSystemPrompt(tools, resourceContext) {
   const toolList = tools
     .map((currentTool) => `- ${currentTool.name}: ${currentTool.description}`)
     .join("\n");
@@ -31,6 +75,9 @@ function buildSystemPrompt(tools) {
 
 你可以使用以下工具：
 ${toolList}
+
+MCP 资源参考资料：
+${resourceContext}
 
 工具使用准则：
 - 开始实现前，先检查当前工作区状态：读取目录、判断目标项目是否已存在、查看 package.json 和关键源码文件。
@@ -46,8 +93,8 @@ ${toolList}
 }
 
 const messages = [
-  new SystemMessage(buildSystemPrompt(allTools)),
-  new HumanMessage(`执行react-todo-list里的dev`),
+  new SystemMessage(buildSystemPrompt(allTools, resourceContext)),
+  new HumanMessage(`查询用户 001 的信息`),
 ];
 
 async function runToolCall(toolCall) {
@@ -130,3 +177,5 @@ for (let turn = 1; turn <= maxTurns; turn += 1) {
     console.log(`\n达到最大轮数 ${maxTurns}，已停止继续调用。`);
   }
 }
+
+await mcpClient.close();

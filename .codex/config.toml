@@ -1,0 +1,5 @@
+# 从仓库根目录启动 Codex，脚本路径相对于启动目录。
+[mcp_servers.my-mcp-server]
+command = "node"
+args = ["my-mcp-server.mjs"]
+enabled = true

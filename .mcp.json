@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "my-mcp-server": {
+      "command": "node",
+      "args": ["/Users/hhx/workspace/hhx/ai/my-mcp-server.mjs"]
+    }
+  }
+}
